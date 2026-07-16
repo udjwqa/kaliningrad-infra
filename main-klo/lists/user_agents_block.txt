@@ -1,0 +1,10 @@
+Googlebot
+AdsBot-Google
+Mediapartners-Google
+bingbot
+YandexBot
+facebookexternalhit
+Twitterbot
+Bytespider
+GPTBot
+ClaudeBot

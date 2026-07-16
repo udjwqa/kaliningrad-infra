@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sports Live</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#fff}
+.header{background:#111;padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #222}
+.header h1{font-size:18px;font-weight:700}
+.header span{color:#4ade80;font-size:12px}
+.tabs{display:flex;gap:0;background:#111;border-bottom:1px solid #222}
+.tab{padding:12px 20px;font-size:13px;color:#888;cursor:pointer;border-bottom:2px solid transparent}
+.tab.active{color:#fff;border-bottom-color:#4ade80}
+.section{padding:16px 20px}
+.section h2{font-size:14px;color:#888;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+.match{background:#161616;border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.match .teams{flex:1}
+.match .team{font-size:14px;margin:2px 0}
+.match .score{font-size:20px;font-weight:700;color:#4ade80;min-width:50px;text-align:center}
+.match .time{font-size:11px;color:#666;min-width:60px;text-align:right}
+.match .live{color:#ef4444;font-size:11px;font-weight:600}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.stat{background:#161616;border-radius:10px;padding:14px;text-align:center}
+.stat .val{font-size:22px;font-weight:700;color:#4ade80}
+.stat .label{font-size:11px;color:#666;margin-top:4px}
+.footer{text-align:center;padding:30px;color:#333;font-size:11px}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>Sports Live</h1>
+<span>LIVE</span>
+</div>
+<div class="tabs">
+<div class="tab active">Football</div>
+<div class="tab">Basketball</div>
+<div class="tab">Tennis</div>
+<div class="tab">Hockey</div>
+</div>
+<div class="section">
+<h2>Live Matches</h2>
+<div class="match"><div class="teams"><div class="team">Manchester City</div><div class="team">Arsenal</div></div><div class="score">2 - 1</div><div class="time"><span class="live">LIVE</span><br>67'</div></div>
+<div class="match"><div class="teams"><div class="team">Real Madrid</div><div class="team">Barcelona</div></div><div class="score">1 - 1</div><div class="time"><span class="live">LIVE</span><br>43'</div></div>
+<div class="match"><div class="teams"><div class="team">PSG</div><div class="team">Bayern Munich</div></div><div class="score">0 - 2</div><div class="time"><span class="live">LIVE</span><br>78'</div></div>
+<div class="match"><div class="teams"><div class="team">Inter Milan</div><div class="team">Juventus</div></div><div class="score">3 - 0</div><div class="time">FT</div></div>
+<div class="match"><div class="teams"><div class="team">Liverpool</div><div class="team">Chelsea</div></div><div class="score">1 - 0</div><div class="time">FT</div></div>
+</div>
+<div class="section">
+<h2>Today's Stats</h2>
+<div class="stats">
+<div class="stat"><div class="val">48</div><div class="label">Matches Today</div></div>
+<div class="stat"><div class="val">127</div><div class="label">Goals Scored</div></div>
+<div class="stat"><div class="val">12</div><div class="label">Live Now</div></div>
+<div class="stat"><div class="val">8</div><div class="label">Leagues</div></div>
+</div>
+</div>
+<div class="section">
+<h2>Upcoming</h2>
+<div class="match"><div class="teams"><div class="team">Dortmund</div><div class="team">Leverkusen</div></div><div class="score">vs</div><div class="time">20:45</div></div>
+<div class="match"><div class="teams"><div class="team">Atletico Madrid</div><div class="team">Sevilla</div></div><div class="score">vs</div><div class="time">21:00</div></div>
+<div class="match"><div class="teams"><div class="team">Napoli</div><div class="team">AC Milan</div></div><div class="score">vs</div><div class="time">21:30</div></div>
+</div>
+<div class="footer">Sports Live &copy; 2026. All match data is provided for informational purposes only.</div>
+</body>
+</html>

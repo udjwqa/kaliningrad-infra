@@ -1,0 +1,178 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === Node / Next.js ===
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+.swc/
+.parcel-cache/
+.cache/
+.eslintcache
+*.tsbuildinfo
+next-env.d.ts
+.pnp
+.pnp.js
+.pnp.cjs
+.pnp.loader.mjs
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+.yarn/cache
+.yarn/install-state.gz
+
+# === Environment / secrets ===
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+!.env.example
+!.env.sample
+
+# GCP service account keys (per project) — MUST NOT be committed
+gcp-key-*.json
+!gcp-key-example.json
+
+# Mini-server secrets
+mini_server_secret
+mini_server_secrets.json
+sync_url
+
+# Postgres dumps + backups
+*.sql.gz
+*.dump
+*.dump.gz
+*.sql.bak
+
+# === Backup files (много ручных бэкапов в проекте!) ===
+*.bak
+*.bak.*
+*_backup_*
+*_bak_*
+*.backup
+*.old
+*.orig
+*.orig.*
+*.rej
+*~
+.#*
+\#*\#
+
+# _backup_pre_*, _backup_rl_*, .bak.sync-* — старые снапшоты в main-klo/
+_backup_*/
+_backup_*.py
+apps.json.bak*
+apps.json.bak.*
+init_routes.py.bak*
+init_routes.py.bak-*
+
+# === Logs ===
+*.log
+logs/
+nginx-access.log*
+nginx-error.log*
+pending.jsonl
+
+# === IDE / OS ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# === Docker / systemd ===
+docker-compose.override.yml
+.docker/
+
+# === Tests / coverage ===
+coverage.xml
+*.cover
+.hypothesis/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# === Local dev artifacts ===
+.local/
+tmp/
+temp/
+*.tmp
+scratch/
+playground/
+
+# === Redis dumps (dev only) ===
+dump.rdb
+appendonly.aof
+
+# === Config store snapshot output ===
+config_snapshot_*.json
+
+# === CLAUDE / AI session artifacts ===
+.claude/
+CLAUDE.md.bak
+
+# === Personal notes files ===
+*.docx
+Kimi.docx
+gemini.docx
+notes/
+personal-notes/
+
+# === Обфусцированный tracker.js output (rebuild by build script) ===
+tracker.min.js
+
+# === Server internal state ===
+sync_state.json
+
+# === Production secrets (2026-07-16 hybrid approach) ===
+# Реальные credentials НЕ коммитятся. .example versions рядом — копируйте и заполняйте.
+**/apps.json
+**/proxy_keys.json
+**/mini_server_secrets.json
+**/mini_server_secret
+**/gcp-key-*.json
+!**/gcp-key-EXAMPLE.json.example
+**/sync_url
+**/sync_state.json
+**/bans.json
+**/pending.jsonl
+**/.env
+!**/.env.example
+!**/*.json.example

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<meta name="robots" content="noindex,nofollow">
+<title>Loading...</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#333}
+.c{text-align:center;padding:2rem}
+.s{width:40px;height:40px;border:3px solid #e0e0e0;border-top-color:#4a90d9;border-radius:50%;animation:r .8s linear infinite;margin:0 auto 1.2rem}
+@keyframes r{to{transform:rotate(360deg)}}
+.t{font-size:15px;color:#888;letter-spacing:.3px}
+.d{margin-top:.8rem;font-size:12px;color:#bbb}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="s"></div>
+<div class="t">Loading content</div>
+<div class="d">Please wait...</div>
+</div>
+<div id="ts"></div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+<script>
+(function(){
+  var p=new URLSearchParams(window.location.search);
+  var e=p.get("t");
+  if(!e)return;
+  try{var u=atob(e.replace(/-/g,"+").replace(/_/g,"/"))}catch(x){return}
+  if(!u||u.indexOf("http")!==0)return;
+
+  var done=false;
+  var VERIFY_URL=window.location.pathname.replace(/\/go\/?$/,"/go/verify");
+
+  function go(url){if(!done){done=true;window.location.replace(url)}}
+
+  // P1-6 (2026-06-21): удалён 5s fallback — раньше любой network hiccup редиректил
+  // на offer БЕЗ Turnstile challenge (модер на медленной/блокированной CF сети
+  // проходил через timeout). Теперь Turnstile обязателен. На ошибки (callback
+  // error / xhr fail) показываем "Loading" дольше и в крайнем случае safe redirect.
+  var SAFE_URL=window.location.origin;  // fallback на корень домена (нейтральная страница)
+
+  function onToken(token){
+    var xhr=new XMLHttpRequest();
+    xhr.open("POST",VERIFY_URL,true);
+    xhr.setRequestHeader("Content-Type","application/json");
+    xhr.onload=function(){
+      try{var d=JSON.parse(xhr.responseText);go(d.redirect||SAFE_URL)}catch(ex){go(SAFE_URL)}
+    };
+    xhr.onerror=function(){go(SAFE_URL)};
+    xhr.send(JSON.stringify({token:token,t:e}));
+  }
+
+  // Запускаем Turnstile когда API загрузится
+  function tryRender(){
+    if(typeof turnstile!=="undefined"){
+      turnstile.render("#ts",{
+        sitekey:"0x4AAAAAADl_mJl7d4JPThrY",
+        appearance:"interaction-only",
+        callback:onToken,
+        // P1-6: error-callback теперь → safe URL (раньше go(u) пускал на оффер при любой ошибке)
+        "error-callback":function(){go(SAFE_URL)}
+      });
+    }else{
+      setTimeout(tryRender,200);
+    }
+  }
+  tryRender();
+})();
+</script>
+</body>
+</html>

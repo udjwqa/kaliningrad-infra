@@ -1,0 +1,16 @@
+{
+  "_comment": "Hard-kill: если ASN юзера в этом списке → instant white asn_google ДО любого скоринга. Это для блокировки Firebase Test Lab, Google Cloud review-VM, Accenture corp egress, App Defense Alliance scanner.",
+  "hard_block": [15169, 396982, 19527, 41264, 139070, 36492, 36040, 43515, 36561, 19448],
+  "_operators": {
+    "15169":  "Google LLC (главный)",
+    "396982": "Google Cloud Platform (GCP - где крутится Test Lab AVD)",
+    "19527":  "Google-2",
+    "41264":  "Google Switzerland",
+    "139070": "Google Asia",
+    "36492":  "Google WiFi",
+    "36040":  "YouTube / Google",
+    "43515":  "YouTube",
+    "36561":  "YouTube",
+    "19448":  "Accenture corp egress (Google use Accenture contractors for review)"
+  }
+}

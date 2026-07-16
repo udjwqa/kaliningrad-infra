@@ -1,0 +1,7 @@
+Android Emulator
+SwiftShader
+VirtualBox
+VMware SVGA
+llvmpipe
+softpipe
+Mesa DRI

@@ -1,0 +1,81 @@
+{
+  "_comment": "Мобильные операторы NG/CI/SN. Если IP юзера в одном из этих ASN + страна совпадает + ipinfo НЕ помечает VPN/proxy/hosting + IPQS fraud_score<75 + не bot → soft-PI eligible. Модератор Google физически не сидит с MTN-симкой в Лагосе/Абиджане/Дакаре.",
+  "NG": [
+    29091,
+    29465,
+    30988,
+    30998,
+    36873,
+    37004,
+    37076,
+    37088,
+    37125,
+    37148,
+    37200,
+    37340,
+    37480,
+    37540,
+    37629,
+    37637,
+    37682,
+    328630,
+    328789,
+    329267
+  ],
+  "CI": [
+    29571,
+    36995,
+    36974,
+    37190
+  ],
+  "SN": [
+    8346,
+    37649,
+    37196
+  ],
+  "_operators": {
+    "29465": "MTN Nigeria (52% рынка, 89M подписчиков)",
+    "36873": "Airtel Nigeria (34%, 59M)",
+    "37148": "Globacom / Glo Mobile (12%, 21M)",
+    "37076": "9mobile / EMTS (1.4%, 2.4M)",
+    "37637": "Smile Communications Nigeria (4G LTE)",
+    "29571": "Orange Cote d'Ivoire (50%)",
+    "36995": "MTN Cote d'Ivoire primary (28%)",
+    "36974": "MTN Cote d'Ivoire secondary/business",
+    "37190": "Atlantique Telecom CI / Moov Africa (22%)",
+    "8346": "Sonatel / Orange Senegal (57%)",
+    "37649": "Yas Senegal (ex-Free, ex-Tigo, 22%)",
+    "37196": "Sudatel / Expresso Senegal (15%)"
+  },
+  "_NG_operators": {
+    "mobile": {
+      "29465": "MTN Nigeria (48% market)",
+      "36873": "Airtel Networks (28% market)",
+      "37148": "Globacom/Glo (16% market)",
+      "37076": "9mobile/EMTS (6% market)",
+      "37637": "Smile Communications (4G LTE)",
+      "328789": "MAFAB Communications (5G launch 2023)"
+    },
+    "isp_residential": {
+      "37340": "Spectranet (крупнейший residential ISP)",
+      "37682": "Tizeti Network (2nd largest)",
+      "328630": "Tizeti secondary ASN",
+      "29091": "ipNX (FTTH)",
+      "329267": "FibreOne/FIBERONE",
+      "37480": "Cobranet",
+      "37088": "VDT Communications",
+      "37125": "Layer3",
+      "37200": "SimbaNET",
+      "37004": "Suburban Broadband",
+      "37629": "eStream Networks",
+      "30998": "Netcom Africa",
+      "37540": "Winrock",
+      "30988": "Internet Solutions Nigeria"
+    },
+    "skipped": {
+      "37282": "MainOne — wholesale carrier + datacenter (high fraud risk)",
+      "36932": "IXPN — Internet Exchange Point",
+      "14593": "Starlink — global ASN, нельзя whitelist by ASN alone"
+    }
+  }
+}

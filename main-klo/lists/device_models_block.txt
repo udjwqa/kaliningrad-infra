@@ -1,0 +1,63 @@
+Pixel
+Pixel XL
+Pixel 2
+Pixel 2 XL
+Pixel 3
+Pixel 3 XL
+Pixel 3a
+Pixel 3a XL
+Pixel 4
+Pixel 4 XL
+Pixel 4a
+Pixel 4a (5G)
+Pixel 5
+Pixel 5a
+Pixel 6
+Pixel 6 Pro
+Pixel 6a
+Pixel 7
+Pixel 7 Pro
+Pixel 7a
+Pixel 8
+Pixel 8 Pro
+Pixel 8a
+Pixel 9
+Pixel 9 Pro
+Pixel 9 Pro XL
+Pixel 9 Pro Fold
+Pixel 9a
+Pixel 10
+Pixel 10 Pro
+Pixel 10 Pro XL
+Pixel 10 Pro Fold
+Pixel Fold
+Pixel Tablet
+Pixel Watch
+Pixel Buds
+Pixelbook
+Pixel Slate
+Pixel C
+Chromebook Pixel
+Google Coral
+Google Mendel
+Google Dev Board
+Google Prototype
+Google Dogfood
+Google Internal
+Google Test Device
+Google Dogfooding
+Nexus
+Nexus_5
+Nexus_5X
+Nexus_6
+Nexus_6P
+Nexus_Player
+Nexus_7
+Nexus_9
+Nexus_10
+Galaxy S24 Ultra
+S24 Ultra
+SM-S928
+Honor 10i
+Honor 10I
+Honor 11

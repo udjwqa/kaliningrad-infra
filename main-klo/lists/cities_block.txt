@@ -1,0 +1,52 @@
+Mountain View
+Cupertino
+Sunnyvale
+Santa Clara
+Palo Alto
+San Francisco
+Redwood City
+Fremont
+Oakland
+Menlo Park
+San Bruno
+San Jose
+Los Angeles
+Irvine
+Venice
+Playa Vista
+New York
+Cambridge
+Kirkland
+Seattle
+Redmond
+Bellevue
+Dublin
+London
+Vienna
+Madrid
+Barcelona
+Lisbon
+Tel Aviv
+Haifa
+Bangalore
+Hyderabad
+Gurgaon
+Mumbai
+Chennai
+Pune
+Singapore
+Taipei
+Tokyo
+Osaka
+Seoul
+Beijing
+Shanghai
+Shenzhen
+Hong Kong
+Sydney
+Melbourne
+Dubai
+Riyadh
+Nairobi
+Lagos
+Johannesburg
