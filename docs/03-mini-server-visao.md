@@ -1,387 +1,397 @@
-# 03. Mini-server ViSao (Total Casino #2) — детальный разбор
+# ViSao Mini-Server (Type C) — полная документация
 
-> Актуально на 2026-07-16. Все патчи июля 2026 (07-04 ... 07-15) применены.
+## Обзор архитектуры
 
-## 1. Обзор
+Type C mini-server = full-stack edge box для одной прилы (или прил-семейства): nginx-splitter на :443 разделяет okhttp-трафик (SDK v4) в mini-clo :8100 и браузерный трафик в Next.js landing :3000.
 
-**Бокс:** `38.244.152.11` (root / `<ROOT_PASSWORD>`)
-**Домен:** `totalsupergame.com` (за Cloudflare, real IP восстановлен через `set_real_ip_from`)
-**Тип:** **C** (mini-clo :8100 + Next.js landing :3000 + nginx-сплиттер)
-**Пакет:** `com.CauHoiViSao.ViSao` — Android spirit-questions приложение, фронтит Total Casino
-**proxy_key:** `<VISAO_PROXY_KEY>`
-**GCP project для PI:** `totalcasino-visao`
-**mini_server_id:** `total-casino-2` (используется main КЛО в `/api/sync/config` фильтре)
-**SDK path:** `/game`
-
-### Что такое Type C
-
-Три поколения архитектуры мини-серверов сосуществуют в проде. Тип C — самый новый, «полноценная копия КЛО на боксе»:
-
-| Компонент               | Порт        | Роль                                                                 |
-|-------------------------|-------------|----------------------------------------------------------------------|
-| **nginx**               | 80, 443     | TLS termination, UA-сплиттер, proxy к :3000 и :8100                  |
-| **mini-clo** (uvicorn)  | 127.0.0.1:8100 | Локальный FastAPI-скорер (PI decode + IPinfo + IPQS + Redis)      |
-| **Next.js landing**     | 127.0.0.1:3000 | Белый фасад — spirit-questions страница (Total Casino cover-story) |
-| **Redis**               | 127.0.0.1:6379 | velocity, cloak_consumed, autoban warm-cache                       |
-
-**Всё, что относится к SDK (`okhttp` UA или query с sid/app_id/instance_id), уходит на mini-clo :8100 → Google PI API → скоринг локально → JSON `{"url": ...}`.** Всё, что относится к браузеру (Chrome CT после `/go`, реальные посетители лендинга, `/.well-known/assetlinks.json` для App Links), уходит на Next.js :3000.
-
-Никакого /init хода к `api.threeamigosteam.com` в hot-path нет (кроме fallback `@init_fallback_p4` — legacy для non-Type-C прил через тот же nginx). Main КЛО у Type C участвует только в:
-1. **Sync конфига** (`GET /api/sync/config` каждые ~5 мин, см. [04-sync-flow.md](04-sync-flow.md)).
-2. **Приёме батчей логов** (`POST /api/sync/logs` каждые 30 с).
-3. **`/engine/go` bounce redirect** (grey → 302 → Keitaro клиента).
-
-## 2. Software stack
-
-- **OS:** Debian 12 (Bookworm)
-- **nginx:** 1.22+, systemd unit `nginx.service`
-- **Python:** 3.12 (в `/opt/mini-clo/venv/`)
-- **uvicorn:** ASGI сервер, слушает `127.0.0.1:8100`
-- **Redis:** `redis://127.0.0.1:6379/0`, systemd `redis-server.service`
-- **Docker:** для Next.js landing (`docker compose up -d`), контейнер биндится на `127.0.0.1:3000:3000` (см. security fix из [landing-box-3000-exposure-incident](../memory/landing-box-3000-exposure-incident.md) — на Type C всё изначально на localhost)
-- **Let's Encrypt:** `/etc/letsencrypt/live/totalsupergame.com/` — управляется через Certbot (auto-renew через systemd timer)
-- **ufw:** `allow 22,80,443/tcp; default deny incoming` (обязательно — иначе :3000 голым в интернет)
-
-## 3. Nginx — полный разбор `sites-enabled/total-casino`
-
-Полный конфиг лежит в этом репо: `/tmp/kaliningrad-infra/mini-server-visao/nginx/sites-enabled__total-casino.conf`. Ниже — построчный разбор.
-
-### 3.1 Глобальный resolver (первая строка файла)
-
-```nginx
-# P7: force IPv4 resolver — required for proxy_pass to api.threeamigosteam.com domain
-resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+```
+                 CloudFlare
+                     │
+                     ▼
+        ┌─────────────────────────┐
+        │ ViSao box (38.244.152.11)│
+        │                          │
+        │  nginx :443              │
+        │  ┌────────────────────┐  │
+        │  │  UA sniffing       │  │
+        │  │  (okhttp regex)    │  │
+        │  └──┬─────────────┬───┘  │
+        │     │okhttp UA    │      │
+        │     ▼             ▼      │
+        │  mini-clo      Next.js   │
+        │   :8100        landing   │
+        │   (FastAPI)     :3000    │
+        │     │                    │
+        │     │ /engine/init       │
+        │     ▼                    │
+        └─────┼────────────────────┘
+              │
+              ▼
+        Main КЛО (31.76.251.103)
+        /engine/init, /api/sync/config
+        /api/sync/logs
 ```
 
-**Зачем.** Cloudflare возвращает AAAA (IPv6) первым для `api.threeamigosteam.com`. Многие боксы не имеют IPv6-route → `connect() failed (101: Network is unreachable)` на upstream. Патч 07-10 (см. [p7-nginx-ipv6-clickid-fix-2026-07-10](../memory/p7-nginx-ipv6-clickid-fix-2026-07-10.md)) заставляет nginx ходить только по IPv4.
+**Зачем нужен**: скрыть connect с APK к main КЛО за одноимённым доменом прилы. Play Store crawlers видят только браузерный landing на бренд-домене (`totalcasino2.app`). Реальный traffic APK идёт на mini-clo → main КЛО.
 
-**Grabli:** `resolver` не разрешён на любом уровне. Правильно — на верхнем уровне файла (http-контекст include). Если засунуть внутрь `upstream {}` — `nginx -t` ругнётся `not allowed here`.
+## Файловая структура `/opt/mini-clo/`
 
-### 3.2 `location = /web_content` — tracker.js proxy
+```
+mini-clo/
+├── main.py                        FastAPI entrypoint, роуты, uvicorn config
+├── init_routes.py                 /init handler — весь pipeline для APK клика
+├── sync.py                        PULL config (apps.json, whitelist) c main КЛО
+├── log_shipper.py                 PUSH batches request_logs на main КЛО
+├── config.py                      Config loader (apps.json, debug_allow.json, etc)
+├── config/
+│   ├── apps.json                  Local mirror апп с main КЛО (обновл. sync-ом)
+│   ├── debug_allow.json           Whitelist IPs (force grey для тестов)
+│   ├── google_asn_blocklist.json  Список Google ASN для asn_google фильтра
+│   ├── mini_server_secret         Ключ для аутентификации sync с main КЛО
+│   ├── sync_url                   URL main КЛО (обычно api.threeamigosteam.com)
+│   ├── sync_state.json            Cursor последней синхронизации (mtime, etag)
+│   ├── bans.json                  Локальный кеш активных banов (для быстрого reject)
+│   └── gcp-key-*.json             Google Play Integrity service account key(s)
+├── constants.py                   Константы: AUTOBAN_SCORE, TTL, thresholds
+├── models.py                      Pydantic модели: ScoringDetail, RequestContext
+├── redis_client.py                Redis wrapper: get/set cache, counters, TTL
+├── external/
+│   ├── play_integrity.py          Google Play Integrity Standard API client
+│   ├── ipinfo_client.py           IPinfo lookup для ASN/geo/privacy
+│   └── ipqs_client.py             (retired 16.07.2026, null-stub)
+├── requirements.txt               fastapi, uvicorn, httpx, redis, google-auth
+└── venv/                          Python 3.11 virtualenv
+```
+
+### `main.py` — FastAPI entrypoint
+
+```python
+from fastapi import FastAPI
+from init_routes import router as init_router
+
+app = FastAPI(title="mini-clo")
+app.include_router(init_router)
+
+# on_startup: launch sync.py и log_shipper.py как asyncio tasks
+```
+
+Что делает: инициализирует FastAPI, регистрирует `/init`, `/health`, поднимает background tasks для sync (каждые 30 sec) и log_shipper (batch каждые 5 sec / 100 rows).
+
+Запуск: `uvicorn main:app --host 127.0.0.1 --port 8100 --workers 2` (см. systemd unit).
+
+### `init_routes.py` — /init handler pipeline
+
+Основной endpoint. Принимает POST `/init` от APK через nginx splitter.
+
+**Pipeline (15 шагов)**:
+
+1. Extract headers: `X-Proxy-Key`, `X-App-Id`, `X-Sid`, `X-Instance-Id`, `X-Integrity-Token`.
+2. Extract IP: `X-Real-User-IP` → `X-Forwarded-For` → `X-Real-IP` → fallback client.host.
+3. **Skip internal IPs** (private ranges) — 2026-07-15 fix, health checks не логируются.
+4. Resolve package: `X-App-Id` (owner-check) + fallback `apps.json[proxy_key]`.
+5. Load app config: `apps.json` → `AppEntry` (safe_url, target_url, block_flags).
+6. Debug allow check: если IP в `debug_allow.json` → force grey, skip scoring.
+7. Whitelist bypass (per-app).
+8. Cache lookup: `cloak_consumed:{sid}` — если запрос уже был (24h TTL) → cached response.
+9. Velocity guard: `init_burst:{ip}` counter (Redis, TTL 300s) → hard-kill если > 40.
+10. Instance burnt check: `instance_burnt:{sid}` → skip (feature disabled клиентом).
+11. Play Integrity decode: `play_integrity_client.verify(integrity_token)` → verdict.
+12. IPinfo lookup: `ipinfo_client.lookup(ip)` → asn/privacy.
+13. Scoring: собираем детали в `List[ScoringDetail]`, суммируем points.
+14. Rejection decision: если score >= AUTOBAN_SCORE → rejection_code, safe_url.
+15. Log to Postgres (через log_shipper batch) + return `{"url": final_url}`.
+
+Ключевые функции: `handle_init()`, `_resolve()`, `_score()`, `_maybe_reject()`.
+
+**2026-07-14 patch**: `pi_playintegrity` alias — verdict полей теперь как `playIntegrity`, не `pi`. Единый вид с main КЛО.
+**2026-07-14 patch**: `pi_decode_always` — PI decode запускается всегда когда токен есть, не только когда `not hard_kill`.
+
+### `sync.py` — PULL config с main КЛО
+
+Раз в 30 сек:
+1. Читает `config/mini_server_secret` + `config/sync_url`.
+2. POST `{sync_url}/api/sync/config` с header `X-Sync-Secret: <secret>` и `X-Mini-Server-Id: <uuid>`.
+3. Response: `{apps: [...], debug_allow: [...], version: N}`.
+4. Пишет в `config/apps.json` + `config/debug_allow.json`.
+5. **auto-reload** (2026-07-15 patch): `config_store.reload()` — immediate in-memory refresh, apps_count обновляется.
+6. Пишет cursor в `sync_state.json`.
+
+Если secret 403 → sync fail, apps_count остаётся 0, все /init → 403.
+
+### `log_shipper.py` — PUSH logs на main КЛО
+
+Batch shipper: собирает request_logs в очередь, каждые 5 сек ИЛИ на 100 rows POST `{sync_url}/api/sync/logs` с header `X-Sync-Secret`. Rows идут в основную Postgres на main КЛО.
+
+Failure mode: если POST 500 — retry 3× с exp backoff, потом сбрасывает batch в `config/pending.jsonl` (DLQ). Reconcile cron восстанавливает.
+
+### `config.py` + `config/*.json`
+
+```python
+class AppEntry(BaseModel):
+    package_name: str
+    proxy_key: str
+    safe_url: str
+    target_url: str
+    require_integrity: bool = False
+    block_ipinfo_hosting: bool = True
+    block_ipinfo_vpn: bool = False
+    block_ipinfo_proxy: bool = False
+    allowed_packages: List[str] = []
+    asn_whitelist: List[str] = []
+    ...
+```
+
+`ConfigStore` singleton держит:
+- `apps: Dict[str, AppEntry]` — key = package_name.
+- `debug_allow: Set[str]` — IPs для force grey.
+- `google_asn_blocklist: Set[str]` — Google ASN.
+
+Метод `reload()` re-читает JSON файлы, обновляет in-memory.
+
+### `redis_client.py`
+
+Wrapper для Redis. Ключи:
+- `cloak_consumed:{sid}` — TTL 86400 (24h). Если key exists → второй /init от того же sid возвращает cached response.
+- `init_burst:{ip}` — INCR + EXPIRE 300s. Если > 40 → velocity hard-kill.
+- `pi_cache:{ip}:{package_name}` — PI verdict cache, TTL 3600.
+- `autoban:{ip}` — ban entry, TTL variable.
+- `ipinfo:{ip}` — ipinfo lookup cache, TTL 3600.
+
+### `external/play_integrity.py`
+
+Google Play Integrity Standard API client. `verify_token(integrity_token, package_name)` → `IntegrityVerdict` с полями `device_recognition`, `meets_basic/strong`, `is_empty_device`, `is_virtual_only`, `app_licensing`, `app_recognition`.
+
+Использует GCP service account key из `config/gcp-key-<app>.json`. Key loader маппится через `apps.json[package_name].gcp_key`.
+
+Failure: если API 400/timeout → возвращает `IntegrityVerdict(is_empty_device=True)` → soft path (2026-07-15 device_compromised DISABLED — не hard-kill).
+
+### `external/ipinfo_client.py`
+
+см. `docs/10-ipinfo.md`.
+
+### `external/ipqs_client.py`
+
+Retired 2026-07-16. Null-stub — `lookup()` всегда возвращает None. Backup: `.bak-ipqsrm-1784187428`. См. `docs/10-ipinfo.md` → «Миграция с IPQS».
+
+### `constants.py`, `models.py`, `requirements.txt`
+
+- `constants.py` — AUTOBAN_SCORE (обычно 100), init_burst threshold (40), TTL значения (300, 3600, 86400).
+- `models.py` — `ScoringDetail(check, points, reason)`, `RequestContext`.
+- `requirements.txt` — fastapi, uvicorn, httpx, redis, google-auth, google-auth-httplib2, pydantic v2.
+
+## Nginx splitter `/etc/nginx/sites-enabled/total-casino`
+
+Splitter на :443 (SSL termination — сертификат от Let's Encrypt через CF Origin Cert).
+
+### UA sniffing и routing
 
 ```nginx
-location = /web_content {
-    proxy_pass https://api.threeamigosteam.com/engine/web_content$is_args$args;
-    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
+map $http_user_agent $sdk_proxy {
+    default        0;
+    "~*okhttp/"    1;   # SDK v4 использует okhttp
+}
+
+server {
+    listen 443 ssl http2;
+    server_name totalcasino2.app;
+    ssl_certificate     /etc/nginx/ssl/totalcasino2.app.crt;
+    ssl_certificate_key /etc/nginx/ssl/totalcasino2.app.key;
+    resolver 8.8.8.8 valid=60s ipv6=off;   # 2026-07-10 ipv6=off fix (nginx IPv6 upstream fail)
     ...
 }
 ```
 
-**Роль:** SDK при старте (или лендинг браузером) тянет `tracker.js`. Всё уходит на main КЛО, потому что tracker должен быть централизован (единая версия, единая логика pixel-collection). Nginx **инжектит X-Proxy-Key** — SDK этого делать не должен, ключ секретный.
+### `/engine/init` proxy на main КЛО
 
-### 3.3 `location = /api/collect` — tracker pixel
+```nginx
+location = /engine/init {
+    # okhttp UA → mini-clo :8100 (POST /init pipeline)
+    if ($sdk_proxy) { rewrite ^ /_clo_init last; }
+    # browser → return 418 (silent tea-pot; landing не использует этот path)
+    return 418;
+}
+location = /_clo_init {
+    internal;
+    proxy_pass http://127.0.0.1:8100/init;
+    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
+    proxy_set_header X-App-Id $http_x_app_id;
+    proxy_set_header X-Sid $http_x_sid;
+    proxy_set_header X-Instance-Id $http_x_instance_id;
+    proxy_set_header X-Integrity-Token $http_x_integrity_token;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
 
-Аналогично `/web_content`, только для pixel-запросов от tracker.js в браузере. Query-string обязана дойти до main КЛО (`$is_args$args`) — там метрики.
+### `/go` proxy (Chrome Custom Tabs cloaking)
 
-### 3.4 `location = /go` и `/go/verify` — bounce redirect
-
+Скрывает threeamigosteam.com в браузере CCT — редирект юзера в grey URL происходит через локальный домен:
 ```nginx
 location = /go {
+    if ($sdk_proxy) { return 418; }   # SDK не использует /go
     proxy_pass https://api.threeamigosteam.com/engine/go$is_args$args;
-    ...
-    add_header Cache-Control "no-store" always;
+    proxy_set_header Host api.threeamigosteam.com;
 }
 ```
 
-**Роль.** Когда mini-clo даёт grey verdict, URL в JSON-ответе SDK = `https://api.threeamigosteam.com/engine/go?t=<b64>`. Chrome Custom Tabs открывает его, main КЛО декодит `t` → 302 → Keitaro. Мы могли бы отдать APK URL сразу на api.threeamigosteam.com, но тогда браузер видит apex-домен КЛО в истории — палево. Проксируя через `totalsupergame.com/go`, мы держим единый домен «прилы» в трафике.
+### `/api/collect` PUSH
 
-**Cache-Control: no-store** — важно, чтобы CF/браузер не кешировали 302 с одним clickid для разных юзеров.
-
-### 3.5 `location = /game` — SDK-сплиттер (главная точка входа)
-
+Дополнительный endpoint для post-init telemetry (feature usage, geo confirmation):
 ```nginx
-location = /game {
-    access_log /var/log/nginx/visao_trace.log visao_trace;
-    if ($http_user_agent ~* "okhttp") { return 418; }
-    error_page 418 = @vsao_sdk_proxy;
-    if ($arg_sid$arg_app_id$arg_instance_id) { return 418; }
-    proxy_pass http://127.0.0.1:3000;   # браузер — на лендинг
+location = /api/collect {
+    proxy_pass http://127.0.0.1:8100/api/collect;
     ...
 }
 ```
 
-**Логика UA-split:**
-1. Если UA содержит `okhttp` (это Kotlin/Android SDK HTTP client) → `return 418` → `error_page 418 = @vsao_sdk_proxy` (см. ниже).
-2. Если в query есть хоть один из `sid|app_id|instance_id` (SDK-контракт) → тоже 418. Это спасает случай, когда прошивка меняет okhttp UA.
-3. Иначе — обычный браузер → на Next.js лендинг :3000. Пользователь видит spirit-questions.
+### Browser landing
 
-**access_log с custom format `visao_trace`** (см. `nginx.conf`) даёт полный дамп заголовков — включая `X-Integrity-Token`, `X-App-Id`, `X-Sid`, `CF-Connecting-IP`. Незаменим при отладке.
-
-### 3.6 `@vsao_sdk_proxy` — internal named location для SDK-запросов
-
+Всё что не заматчилось выше:
 ```nginx
-error_page 418 = @vsao_sdk_proxy;
-location @vsao_sdk_proxy {
-    access_log /var/log/nginx/visao_trace.log visao_trace;
-    internal;
-    rewrite ^ /init break;
-    proxy_pass http://127.0.0.1:8100;
-    ...
-    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
-    proxy_connect_timeout 8s;
-    proxy_read_timeout 12s;
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
 }
 ```
 
-**Ключевые моменты:**
-- `internal` — location недоступен снаружи (только через `error_page`).
-- `rewrite ^ /init break` — переписывает URI на `/init` (mini-clo слушает только `/init`).
-- `proxy_pass http://127.0.0.1:8100` — на локальный mini-clo (без TLS, всё в localhost).
-- `X-Proxy-Key` **инжектится nginx-ом** — SDK ничего не знает про этот ключ. Ротация ключа = править nginx-конфиг во всех 4 хардкодах (`/web_content`, `/api/collect`, `/go`, `@vsao_sdk_proxy`) + `apps.json` на main КЛО + `proxy_keys.json` на main КЛО. См. [mini-server-architecture](../memory/mini-server-architecture.md) ранбук ротации.
-- Timeout 8s connect / 12s read — с запасом, чтобы Google PI decode (обычно ~1-2 с, макс. 8 с после [pi-decode-timeout-fix](../memory/pi-decode-timeout-fix.md)) успел завершиться.
-
-### 3.7 `location = /init` и `@init_fallback_p4` — универсальный fallback
-
-```nginx
-location = /init {
-    if ($http_user_agent ~* "okhttp") { return 418; }
-    proxy_pass http://127.0.0.1:3000;   # браузер /init — на лендинг (маловероятно)
-    ...
-}
-error_page 418 = @init_fallback_p4;
-location @init_fallback_p4 {
-    internal;
-    rewrite ^ /engine/init break;
-    proxy_pass https://api.threeamigosteam.com;
-    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
-    ...
-}
-```
-
-**Зачем.** Оставлено с эпохи универсального fallback'а (max-conversion mode 07-09). Если какая-то версия APK шлёт напрямую `POST /init` вместо `/game`, nginx маршрутизирует её на main КЛО (`/engine/init`), не на mini-clo. Type C бокс не обслуживает это локально, потому что `/init` дублирует named location — историческая причина (сначала был универсальный fallback, потом добавили Type C `/game`).
-
-**⚠️ Grabli с двойным `error_page 418`.** В том же server-блоке `/game` и `/init` оба используют `error_page 418`. Последний определённый **перекрывает** предыдущий на уровне server-блока. Правильно — оба `error_page 418 = @...` дублируются, но на практике nginx матчит по последнему. Для детерминизма имеет смысл переписать так, чтобы `error_page` жил внутри самого `location {}` (см. [visao-integrity-fix-2026-07-14](../memory/visao-integrity-fix-2026-07-14.md)).
-
-### 3.8 Прочие location'ы
-
-- `location /` → `proxy_pass http://127.0.0.1:3000` с WebSocket-поддержкой (`Upgrade`/`Connection: upgrade`) для HMR/live-reload.
-- `location /_next/static/` — статика Next с immutable cache 1 год.
-- `location = /.well-known/assetlinks.json` — обязательно `default_type application/json` без редиректа (Android App Links проверяют строгий Content-Type).
-
-### 3.9 TLS
-
-- Cert от Let's Encrypt (`/etc/letsencrypt/live/totalsupergame.com/`), managed by Certbot.
-- Redirect с 80 на 443 (второй `server {}` блок).
-- `include /etc/nginx/snippets/cloudflare-realip.conf` — обязательно **ДО** любых allow/deny, чтобы `$remote_addr` уже был реальным IP клиента к моменту фильтрации.
-
-### 3.10 `cloudflare-realip.conf` — снаппет
-
-```nginx
-set_real_ip_from 173.245.48.0/20;
-...  # весь список CF v4/v6 диапазонов
-real_ip_header CF-Connecting-IP;
-real_ip_recursive on;
-```
-
-- CF-Connecting-IP — заголовок, который CF гарантирует. `X-Forwarded-For` тоже приходит, но менее строг.
-- `real_ip_recursive on` — если XFF содержит цепочку `[CF-ip, real-ip]`, nginx выбирает не-CF из хвоста.
-
-**⚠️ Не добавлять наивно `allow CF-ranges; deny all;` на этом же снаппете** — `set_real_ip_from` переписывает `$remote_addr` **до** allow/deny, и живые юзеры за CF получат deny. Origin-protection надо делать иначе (WAF на CF, либо allow/deny **до** `real_ip_header`).
-
-## 4. Systemd unit — `mini-clo.service`
+## Systemd unit `mini-clo.service`
 
 ```ini
 [Unit]
-Description=mini-КЛО FastAPI service
-After=network.target
-Wants=mini-clo-sync.service
+Description=mini-clo FastAPI :8100
+After=network.target redis.service
 
 [Service]
-Type=simple
+Type=exec
 User=root
 WorkingDirectory=/opt/mini-clo
 Environment=PYTHONUNBUFFERED=1
-Environment=BOUNCE_URL_BASE=https://totalsupergame.com
-Environment=IPINFO_TOKEN=8b471d08135468
-Environment=IPQS_API_KEY=qtijEY4maadviEu8leT7LftvgMWxwicO
-Environment=REDIS_URL=redis://127.0.0.1:6379/0
-ExecStart=/opt/mini-clo/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8100
+Environment=IPINFO_TOKEN=<TOKEN>
+ExecStart=/opt/mini-clo/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8100 --workers 2
 Restart=on-failure
-RestartSec=5
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-**Что важно:**
-- `BOUNCE_URL_BASE` — не используется в текущей версии mini-clo (`init_routes.py` хардкодит `https://api.threeamigosteam.com/engine` через `os.getenv("BOUNCE_URL_BASE", ...)`), но оставлено как gcp-hint для будущего.
-- `IPINFO_TOKEN`, `IPQS_API_KEY` — общие для всех Type C боксов, ротируются централизованно.
-- `REDIS_URL` — локальный Redis, обязательный для velocity/cloak_consumed. Если Redis отключён, все Redis-checks fail-OPEN (см. `redis_client.py:get_redis()`).
-- `Wants=mini-clo-sync.service` — тянет sync-таймер (см. [04-sync-flow.md](04-sync-flow.md)).
+## Sync flow — config PULL + logs PUSH
 
-## 5. Файловая структура `/opt/mini-clo/`
-
+**Config PULL** (30 sec):
 ```
-/opt/mini-clo/
-├── main.py                 # FastAPI, lifespan (initial_sync, PI init, log_shipper task)
-├── init_routes.py          # POST /init + GET /init — весь scoring pipeline (~380 строк)
-├── config.py               # ConfigStore, is_debug(), _load_debug()
-├── sync.py                 # sync_config() + initial_sync() — pull от main КЛО
-├── log_shipper.py          # LogShipper — async queue + batch POST /api/sync/logs
-├── redis_client.py         # is_autobanned, is_instance_burnt (disabled), cloak_consumed, velocity
-├── constants.py            # LANG_HARDKILL_MAP + check_lang_country_mismatch
-├── models.py               # Dataclasses (ScoringDetail, ScoringResult)
-├── requirements.txt
-├── venv/                   # Python 3.12 virtualenv
-├── external/
-│   ├── play_integrity.py   # Google PI API client (обёртка google-api-python-client)
-│   ├── ipinfo_client.py    # IPinfo v2 Max — asn/geo/vpn/proxy/res_proxy/hosting
-│   └── ipqs_client.py      # IPQualityScore fraud API
-├── config/
-│   ├── apps.json                       # synced от main КЛО (только apps с mini_server_id=total-casino-2)
-│   ├── bans.json                       # synced ip_bans (7d TTL в Redis после warm)
-│   ├── debug_allow.json                # synced whitelist (IP + instance_id → force grey)
-│   ├── google_asn_blocklist.json       # synced list of Google ASN (asn_google hard-kill)
-│   ├── gcp-key-totalcasino-visao.json  # synced из main КЛО (base64-decoded)
-│   ├── mini_server_secret              # X-Sync-Secret для /api/sync/config auth
-│   ├── sync_url                        # "https://api.threeamigosteam.com/engine"
-│   └── sync_state.json                 # {"version": <timestamp>, "last_sync_ts": ...}
-└── logs/
-    └── pending.jsonl                   # неотправленные батчи логов (retry на следующем flush)
+mini-clo → POST {sync_url}/api/sync/config
+           X-Sync-Secret: <mini_server_secret>
+           X-Mini-Server-Id: <uuid>
+
+main КЛО ← respond
+           {
+             "apps": [...],   // filtered by mini_server_id
+             "debug_allow": [...],
+             "version": 42
+           }
+
+mini-clo → write config/apps.json, config/debug_allow.json
+mini-clo → config_store.reload()   # 2026-07-15 fix, immediate refresh
 ```
 
-### 5.1 `mini_server_secret`
-
-Один shared-secret на бокс. Соответствует ключу в `mini_server_secrets.json` на main КЛО (для ViSao это `total-casino-2` → `1pMs6PMpmUVp0gJJGNPLMGS1MktEUC15mQIwKf2MEO0`). Передаётся в заголовке `X-Sync-Secret` при sync и log-ship.
-
-### 5.2 `sync_url`
-
-Одна строка: `https://api.threeamigosteam.com/engine`. Используется `sync.py` и `log_shipper.py` для формирования endpoint'ов (`{sync_url}/api/sync/config`, `{sync_url}/api/sync/logs`).
-
-### 5.3 `apps.json`
-
-Локальная копия `config/apps.json` от main КЛО, но **отфильтрованная** по `mini_server_id="total-casino-2"`. На ViSao всегда должна быть ровно одна запись — `com.CauHoiViSao.ViSao`. Если пусто (`[]`) — значит на main КЛО у прилы стал `mini_server_id=null` (инцидент [visao-integrity-fix-2026-07-14](../memory/visao-integrity-fix-2026-07-14.md)) → все SDK-запросы получают 403.
-
-## 6. Flow трафика на этом боксе
-
-### 6.1 SDK-запрос (Android, окhttp, целевой сценарий)
-
+**Logs PUSH** (5 sec / 100 rows):
 ```
-APK (SDK v4 AppClient.kt)
-  │ POST https://totalsupergame.com/game
-  │ Headers:
-  │   User-Agent: okhttp/4.x
-  │   X-App-Id: com.CauHoiViSao.ViSao
-  │   X-Sid: <UUID>
-  │   X-Instance-Id: <UUID>
-  │   X-Integrity-Token: <Play Integrity JWT>
-  │   X-Locale: en-US
-  ▼
-Cloudflare (edge)
-  │ добавляет CF-Connecting-IP
-  ▼
-nginx :443 (totalsupergame.com)
-  │ location = /game
-  │   if ($http_user_agent ~* "okhttp") { return 418; }
-  │ error_page 418 = @vsao_sdk_proxy
-  ▼
-@vsao_sdk_proxy (internal)
-  │ rewrite ^ /init break
-  │ proxy_pass http://127.0.0.1:8100
-  │ + X-Proxy-Key: <VISAO_PROXY_KEY> (инжект)
-  │ + X-Real-IP, X-Forwarded-For
-  ▼
-mini-clo :8100 (init_routes.py init_resolve)
-  │ 1. auth (proxy_key → apps.json → ViSao)
-  │ 2. HDRTRACE лог (integrity_token длина, headers dump — ViSao only)
-  │ 3. Debug whitelist bypass (config_store.is_debug(ip, instance_id))
-  │ 4. auto_ban (Redis autoban:pkg:ip / autoban:_:ip)
-  │ 5. instance_burnt (Redis, disabled с 07-14)
-  │ 6. IPinfo lookup (geo, asn, vpn, proxy, res_proxy, hosting, mobile)
-  │ 7. asn_google hard-kill (google_asn_blocklist.json)
-  │ 8. IPinfo hard-kills (vpn / proxy / res_proxy non-CGNAT / tor / hosting)
-  │ 9. country_not_allowed / excluded_countries
-  │ 10. lang_country_mismatch (require_integrity apps)
-  │ 11. IPQS lookup + hard-kills (tor unconditional, vpn/fraud for require_integrity)
-  │ 12. Velocity guard (per-instance 12/5min, per-ip 60/5min, per-subnet 15/15min)
-  │ 13. Play Integrity verify (Google PI API, unconditional if token present since 07-14)
-  │ 14. Verdict decision (grey / white)
-  │ 15. cloak_consumed check (SETNX, если verdict=grey и cloak_consumed_enabled)
-  │ 16. Mark instance_burnt (если verdict=white и rejection ∈ BURN_CODES)
-  ▼
-Response JSON:
-  grey → {"url":"https://api.threeamigosteam.com/engine/go?t=<b64(target?clickid=X&geo=Y)>"}
-  white → {"url":"<safe_url>"}
-  │
-  ▼
-APK получает URL:
-  grey → открывает в Chrome Custom Tabs
-    │
-    ▼
-  Chrome → GET https://api.threeamigosteam.com/engine/go?t=...
-    │
-    ▼
-  main КЛО (gateway.py) → декодит t → 302 → Keitaro (stksprapp / sportvalyellowapp)
-    │
-    ▼
-  Keitaro → 302 → казино
+mini-clo → POST {sync_url}/api/sync/logs
+           X-Sync-Secret: <mini_server_secret>
+           body: [{ts, ip, pkg, sid, rejection_code, raw_payload}, ...]
+
+main КЛО ← INSERT into request_logs (Postgres)
 ```
 
-**Логирование:** `log_shipper.enqueue(log_entry)` кладёт запись в asyncio.Queue. Каждые 30 с (`FLUSH_INTERVAL_SEC`) все накопленные записи батчем уходят на `POST /api/sync/logs` main КЛО. Там `request_logger.log()` пишет в Postgres `request_logs` table.
+## Redis (ключи, TTL)
 
-### 6.2 Браузер (случайный посетитель или Chrome CT после `/go`)
+| Ключ                                | TTL       | Назначение                              |
+|-------------------------------------|-----------|-----------------------------------------|
+| `cloak_consumed:{sid}`              | 86400s    | Second-hit dedup                        |
+| `init_burst:{ip}`                   | 300s      | Velocity counter                        |
+| `pi_cache:{ip}:{pkg}`               | 3600s     | Play Integrity verdict cache            |
+| `ipinfo:{ip}`                       | 3600s     | ipinfo lookup cache                     |
+| `autoban:{ip}`                      | variable  | IP ban (TTL зависит от reason)          |
+| `sync_state:mini-clo`               | 86400s    | Last successful config PULL timestamp   |
 
-```
-Browser → GET https://totalsupergame.com/game
-  │ User-Agent: Mozilla/... (не okhttp)
-  ▼
-nginx location = /game
-  │ okhttp check — не совпало
-  │ arg_sid$arg_app_id$arg_instance_id — пусто
-  │ proxy_pass http://127.0.0.1:3000
-  ▼
-Next.js landing → spirit-questions страница
-```
+## Deployment новой Type C mini-server с нуля (15 шагов)
 
-### 6.3 tracker.js pixel
+**Prerequisites**: чистый Ubuntu 22.04, root SSH, домен + CF proxy DNS.
 
-```
-Browser → GET https://totalsupergame.com/api/collect?...
-  ▼
-nginx location = /api/collect
-  │ proxy_pass https://api.threeamigosteam.com/engine/api/collect?...
-  │ + X-Proxy-Key инжект
-  ▼
-main КЛО (collect_routes.py) → пишет в БД
-```
+1. `apt install nginx redis-server python3.11 python3.11-venv git`
+2. `mkdir -p /opt/mini-clo && cd /opt/mini-clo`
+3. `git clone <internal-mini-clo-source>` OR `scp` из другого рабочего Type C бокса
+4. `python3.11 -m venv venv && venv/bin/pip install -r requirements.txt`
+5. Создать `/opt/mini-clo/config/mini_server_secret` (32 hex chars, `openssl rand -hex 16 > config/mini_server_secret`)
+6. Создать `/opt/mini-clo/config/sync_url` — `https://api.threeamigosteam.com`
+7. Зарегистрировать mini_server в main КЛО panel: `/dashboard/infra` → Add mini-server → generate mini_server_id + save secret
+8. Забросить GCP key для прилы(-й): `/opt/mini-clo/config/gcp-key-<pkg>.json`
+9. Инициалить apps.json — sync первый раз (либо ручной pull, либо ждать 30s фонового tick)
+10. Настроить systemd unit `/etc/systemd/system/mini-clo.service` (см. выше)
+11. `systemctl daemon-reload && systemctl enable --now mini-clo`
+12. `journalctl -u mini-clo -f` — убедиться что no errors, apps_count > 0
+13. Настроить nginx `/etc/nginx/sites-enabled/<app-name>` (splitter с UA regex, см. выше)
+14. `certbot --nginx -d <domain>` OR install CF Origin cert
+15. `nginx -t && systemctl reload nginx`. E2E test: `curl -X POST https://<domain>/engine/init -H "User-Agent: okhttp/4.9.0" -H "X-Proxy-Key: pk_..." -H "X-App-Id: com.pkg" -d '{}'` → HTTP 200 + JSON `{url: ...}`.
 
-## 7. Landing (Next.js) — что это
+## Common failures + fixes
 
-Next.js standalone-приложение `total-casino` — фасад для white-flow. Крутится либо через systemd `total-casino.service` (стандартный `node server.js`) в Type C-вариантах, либо через `docker compose`. На ViSao — **standalone без исходников** (только `.next/` build), правки политики (email, юр. лицо) делаются напрямую в `.next/server/app/privacy-total.{rsc,html}` через sed → restart сервиса. Подробнее — [visao-integrity-fix-2026-07-14](../memory/visao-integrity-fix-2026-07-14.md).
+### `msid=null` → 403 sync
 
-**⚠️ Landing НЕ должен быть публично доступен на :3000**. Docker-контейнер обязан слушать `127.0.0.1:3000:3000`, а не `0.0.0.0:3000:3000`. ufw должен запрещать 3000 наружу. Причина — CVE-2025-29927 / CVE-2025-55182 (RCE в Next.js middleware). См. инцидент [landing-box-3000-exposure-incident](../memory/landing-box-3000-exposure-incident.md).
+**Симптом**: `journalctl -u mini-clo | grep 403` показывает `X-Mini-Server-Id: null` в sync requests. Config sync fails.
 
-## 8. Проверка живости бокса
+**Fix**: в panel `/dashboard/infra` привязать mini-server к боксу, скопировать `mini_server_id` UUID, добавить в `apps.json` per-app `mini_server_id` поле. См. memory `visao-integrity-fix-2026-07-14`.
 
+### `apps_count=0` → 403 /init
+
+**Симптом**: sync fails ИЛИ `config_store.reload()` не вызвался → apps_count в памяти = 0 → каждый /init reject.
+
+**Fix**: sync.py auto-reload patch (2026-07-15). Applied на 6 mini-clo боксах. Backup: `sync.py.bak-autoreload-1784083655`.
+
+### Nginx duplicate resolver (backup в sites-enabled)
+
+**Симптом**: `nginx -t` → `duplicate resolver directive`. Часто из-за `*.bak-*` файлов в `/etc/nginx/sites-enabled/`.
+
+**Fix**: **всегда** хранить backups nginx configs **вне** sites-enabled/, например `/root/nginx-backups/`. См. memory `three-apps-fix-2026-07-15`.
+
+### Missing GCP key → PI disabled
+
+**Симптом**: `journalctl -u mini-clo | grep 'gcp key not found'`. `playIntegrity: {}` в audit — PI verdict пустой.
+
+**Fix**: положить key в `/opt/mini-clo/config/gcp-key-<pkg>.json`, restart mini-clo. Убедиться что `apps.json[pkg].gcp_key` указывает на файл.
+
+### `mini_server_secret` rotation
+
+**Steps**:
+1. Panel `/dashboard/infra` → Regenerate secret для бокса → скопировать новый.
+2. На боксе: `echo '<new>' > /opt/mini-clo/config/mini_server_secret`.
+3. `systemctl restart mini-clo`.
+4. Sync tick через 30s — должен быть 200 OK.
+5. Если нет: `logger.error('Sync 403 — wrong secret')` в journalctl → сверить hex.
+
+## Rollback
+
+Все патчи имеют backup с timestamp суффиксом:
 ```bash
-# 1. mini-clo health
-curl -s http://127.0.0.1:8100/health
-# → {"ok":true,"apps_count":1,"pi_keys":1}
-
-# 2. Sync-состояние
-cat /opt/mini-clo/config/sync_state.json
-# → {"version": 1789..., "last_sync_ts": 1789...}
-
-# 3. apps.json содержит ViSao
-grep -c com.CauHoiViSao.ViSao /opt/mini-clo/config/apps.json
-# → 1
-
-# 4. GCP key на месте
-ls -la /opt/mini-clo/config/gcp-key-totalcasino-visao.json
-# → -rw------- root root ~2.4 KB
-
-# 5. SDK end-to-end (окhttp UA)
-curl -sk -X POST https://totalsupergame.com/game \
-  -H 'User-Agent: okhttp/4.11.0' \
-  -H 'X-App-Id: com.CauHoiViSao.ViSao' \
-  -H 'X-Sid: sanity-check-uuid' \
-  -H 'X-Instance-Id: sanity-check-uuid' \
-  -H 'X-Integrity-Token: dummy' \
-  -H 'X-Locale: en-US'
-# → 200 {"url":"<safe_url>"} — grey не даст без реального PI-токена, но 200 подтверждает pipeline жив
-
-# 6. Nginx trace log (SDK-запросы)
-tail -f /var/log/nginx/visao_trace.log
+# Пример rollback последнего изменения на mini-clo:
+ssh root@38.244.152.11
+cp /opt/mini-clo/external/ipqs_client.py.bak-ipqsrm-<TS> /opt/mini-clo/external/ipqs_client.py
+systemctl restart mini-clo
 ```
 
-Если п.1 отдаёт `apps_count:0` — mini_server_id стёрся на main КЛО. Если п.4 отсутствует — sync не подтянул. См. [08-troubleshooting.md](08-troubleshooting.md).
+Nginx rollback:
+```bash
+cp /root/nginx-backups/total-casino.bak-<TS> /etc/nginx/sites-enabled/total-casino
+nginx -t && systemctl reload nginx
+```
+
+Systemd unit:
+```bash
+cp /etc/systemd/system/mini-clo.service.bak-<TS> /etc/systemd/system/mini-clo.service
+systemctl daemon-reload && systemctl restart mini-clo
+```
+
+Список последних патчей и backup timestamps: `find /opt/mini-clo -name '*.bak-*' -printf '%T+ %p\n' | sort -r | head`.
