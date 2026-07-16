@@ -259,7 +259,7 @@ location @vsao_sdk_proxy {
     internal;
     rewrite ^ /init break;                                     # переписываем в /init
     proxy_pass http://127.0.0.1:8100;                          # → mini-clo (Type C)
-    proxy_set_header X-Proxy-Key "pk_d9185ab14201d57bd47302844e231347";
+    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }

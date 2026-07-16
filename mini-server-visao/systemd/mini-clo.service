@@ -1,0 +1,22 @@
+[Unit]
+Description=mini-КЛО FastAPI service
+After=network.target
+Wants=mini-clo-sync.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/mini-clo
+Environment=PYTHONUNBUFFERED=1
+Environment=BOUNCE_URL_BASE=https://totalsupergame.com
+Environment=IPINFO_TOKEN=8b471d08135468
+Environment=IPQS_API_KEY=qtijEY4maadviEu8leT7LftvgMWxwicO
+Environment=REDIS_URL=redis://127.0.0.1:6379/0
+ExecStart=/opt/mini-clo/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8100
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

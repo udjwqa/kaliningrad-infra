@@ -4,11 +4,11 @@
 
 ## 1. Обзор
 
-**Бокс:** `38.244.152.11` (root / `6bP82ddHds`)
+**Бокс:** `38.244.152.11` (root / `<ROOT_PASSWORD>`)
 **Домен:** `totalsupergame.com` (за Cloudflare, real IP восстановлен через `set_real_ip_from`)
 **Тип:** **C** (mini-clo :8100 + Next.js landing :3000 + nginx-сплиттер)
 **Пакет:** `com.CauHoiViSao.ViSao` — Android spirit-questions приложение, фронтит Total Casino
-**proxy_key:** `pk_d9185ab14201d57bd47302844e231347`
+**proxy_key:** `<VISAO_PROXY_KEY>`
 **GCP project для PI:** `totalcasino-visao`
 **mini_server_id:** `total-casino-2` (используется main КЛО в `/api/sync/config` фильтре)
 **SDK path:** `/game`
@@ -62,7 +62,7 @@ resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
 ```nginx
 location = /web_content {
     proxy_pass https://api.threeamigosteam.com/engine/web_content$is_args$args;
-    proxy_set_header X-Proxy-Key "pk_d9185ab14201d57bd47302844e231347";
+    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
     ...
 }
 ```
@@ -117,7 +117,7 @@ location @vsao_sdk_proxy {
     rewrite ^ /init break;
     proxy_pass http://127.0.0.1:8100;
     ...
-    proxy_set_header X-Proxy-Key "pk_d9185ab14201d57bd47302844e231347";
+    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
     proxy_connect_timeout 8s;
     proxy_read_timeout 12s;
 }
@@ -143,7 +143,7 @@ location @init_fallback_p4 {
     internal;
     rewrite ^ /engine/init break;
     proxy_pass https://api.threeamigosteam.com;
-    proxy_set_header X-Proxy-Key "pk_d9185ab14201d57bd47302844e231347";
+    proxy_set_header X-Proxy-Key "<VISAO_PROXY_KEY>";
     ...
 }
 ```
@@ -278,7 +278,7 @@ nginx :443 (totalsupergame.com)
 @vsao_sdk_proxy (internal)
   │ rewrite ^ /init break
   │ proxy_pass http://127.0.0.1:8100
-  │ + X-Proxy-Key: pk_d9185ab14201d57bd47302844e231347 (инжект)
+  │ + X-Proxy-Key: <VISAO_PROXY_KEY> (инжект)
   │ + X-Real-IP, X-Forwarded-For
   ▼
 mini-clo :8100 (init_routes.py init_resolve)
